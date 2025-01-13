@@ -1,6 +1,5 @@
 import copy
 from multiprocessing import Pool
-import time
 
 import random
 import numpy as np
@@ -378,7 +377,7 @@ class CNN:
                 layer["biases"] = np.random.uniform(-1, 1, size=(layer["neurons"]))
                 previous_size = layer["neurons"]
                 self.genome["ffn_layers"].append(layer)
-                
+
 
 
 
@@ -678,7 +677,6 @@ class CNN:
     def recalculate_sizes(self, input_size=(6, 7), input_channels=1):
         """
         Recalculate the sizes of all layers in the genome and update weights and biases.
-        Ensures the CNN output aligns with the FFN input.
         Args:
             input_size (tuple): Initial input size (height, width).
             input_channels (int): Number of input channels.
@@ -686,22 +684,20 @@ class CNN:
         current_height, current_width = input_size
         current_channels = input_channels
 
-        # Process CNN layers
         for layer in self.genome["cnn_layers"]:
             if layer["type"] == "conv":
+                # Adjust kernel size if it's too large
                 kh = layer["kernel_height"]
                 kw = layer["kernel_width"]
-                stride = layer.get("stride", 1)
-
-                # Adjust kernel size if it's too large
-                kh = min(kh, current_height)
-                kw = min(kw, current_width)
-
+                if kh > current_height:
+                    kh = current_height
+                if kw > current_width:
+                    kw = current_width
                 layer["kernel_height"], layer["kernel_width"] = kh, kw
 
-                # Compute output size after convolution
-                current_height = compute_conv_output_size(current_height, kh, stride=stride)
-                current_width = compute_conv_output_size(current_width, kw, stride=stride)
+                # Recalculate output size
+                output_height = compute_conv_output_size(current_height, kh, stride=layer.get("stride", 1))
+                output_width = compute_conv_output_size(current_width, kw, stride=layer.get("stride", 1))
 
                 # Update weights and biases
                 layer["weights"] = np.random.uniform(
@@ -709,39 +705,32 @@ class CNN:
                 )
                 layer["biases"] = np.random.uniform(-1, 1, size=(layer["filters"]))
 
+                current_height, current_width = output_height, output_width
                 current_channels = layer["filters"]
 
             elif layer["type"] == "pool":
+                # Adjust pool size if necessary
                 pool_size = layer["size"]
-                stride = layer.get("stride", 2)
+                if pool_size > current_height:
+                    pool_size = current_height
+                if pool_size > current_width:
+                    pool_size = current_width
+                layer["size"] = pool_size
 
-                # Compute output size after pooling
-                current_height = compute_pool_output_size(current_height, pool_size, stride=stride)
-                current_width = compute_pool_output_size(current_width, pool_size, stride=stride)
+                # Recalculate output size
+                output_height = compute_pool_output_size(current_height, pool_size, stride=layer.get("stride", 2))
+                output_width = compute_pool_output_size(current_width, pool_size, stride=layer.get("stride", 2))
+                current_height, current_width = output_height, output_width
 
-        # Compute flattened size
+        # Recalculate flattened size
         flattened_size = current_height * current_width * current_channels
 
         # Update FFN layers
-        if self.genome["ffn_layers"]:
-            # Ensure the first FFN layer's input size matches the CNN output
-            first_ffn_layer = self.genome["ffn_layers"][0]
-            first_ffn_layer["weights"] = np.random.uniform(-1, 1, size=(first_ffn_layer["neurons"], flattened_size))
-            first_ffn_layer["biases"] = np.random.uniform(-1, 1, size=(first_ffn_layer["neurons"]))
-
-            # Update subsequent FFN layers
-            previous_size = first_ffn_layer["neurons"]
-            for layer in self.genome["ffn_layers"][1:]:
-                layer["weights"] = np.random.uniform(-1, 1, size=(layer["neurons"], previous_size))
-                layer["biases"] = np.random.uniform(-1, 1, size=(layer["neurons"]))
-                previous_size = layer["neurons"]
-
-        else:
-            raise ValueError("Genome does not have FFN layers.")
-
-
-
-
+        previous_size = flattened_size
+        for layer in self.genome["ffn_layers"]:
+            layer["weights"] = np.random.uniform(-1, 1, size=(layer["neurons"], previous_size))
+            layer["biases"] = np.random.uniform(-1, 1, size=(layer["neurons"]))
+            previous_size = layer["neurons"]
 
 
 
@@ -759,78 +748,6 @@ def compute_pool_output_size(input_size, pool_size, stride=2):
 def fitness_wrapper(args):
     individual, shared_boards = args
     return individual.evaluate_fitness(shared_boards)
-
-
-
-def single_point_crossover(parent1, parent2):
-    """
-    Perform single-point crossover between two parent CNNs to produce a child CNN.
-    Ensures that the genome remains valid and all sizes align.
-
-    Args:
-        parent1 (CNN): The first parent CNN.
-        parent2 (CNN): The second parent CNN.
-
-    Returns:
-        CNN: The child CNN resulting from crossover.
-    """
-    child_genome = {"cnn_layers": [], "ffn_layers": []}
-
-    # Random crossover point for CNN layers
-    cnn_crossover_point = random.randint(0, min(len(parent1.genome["cnn_layers"]), len(parent2.genome["cnn_layers"])))
-    child_genome["cnn_layers"] = (
-        parent1.genome["cnn_layers"][:cnn_crossover_point] +
-        parent2.genome["cnn_layers"][cnn_crossover_point:]
-    )
-
-    # Random crossover point for FFN layers
-    ffn_crossover_point = random.randint(0, min(len(parent1.genome["ffn_layers"]), len(parent2.genome["ffn_layers"])))
-    child_genome["ffn_layers"] = (
-        parent1.genome["ffn_layers"][:ffn_crossover_point] +
-        parent2.genome["ffn_layers"][ffn_crossover_point:]
-    )
-
-    # Create the child CNN
-    child_cnn = CNN(genome=child_genome)
-
-    # Recalculate sizes to ensure proper alignment
-    current_height, current_width, current_channels = 6, 7, 1  # Initial input size
-    for layer in child_cnn.genome["cnn_layers"]:
-        if layer["type"] == "conv":
-            kernel_height = layer["kernel_height"]
-            kernel_width = layer["kernel_width"]
-            stride = layer.get("stride", 1)
-
-            kernel_height = min(kernel_height, current_height)
-            kernel_width = min(kernel_width, current_width)
-            layer["kernel_height"], layer["kernel_width"] = kernel_height, kernel_width
-
-            current_height = compute_conv_output_size(current_height, kernel_height, stride=stride)
-            current_width = compute_conv_output_size(current_width, kernel_width, stride=stride)
-            current_channels = layer["filters"]
-
-        elif layer["type"] == "pool":
-            pool_size = layer["size"]
-            stride = layer.get("stride", 2)
-
-            pool_size = min(pool_size, current_height, current_width)
-            layer["size"] = pool_size
-
-            current_height = compute_pool_output_size(current_height, pool_size, stride=stride)
-            current_width = compute_pool_output_size(current_width, pool_size, stride=stride)
-
-    # Compute flattened size
-    flattened_size = current_height * current_width * current_channels
-
-    # Adjust the first FFN layer to match the CNN output
-    if child_cnn.genome["ffn_layers"]:
-        first_ffn_layer = child_cnn.genome["ffn_layers"][0]
-        first_ffn_layer["weights"] = np.random.uniform(-1, 1, size=(first_ffn_layer["neurons"], flattened_size))
-        first_ffn_layer["biases"] = np.random.uniform(-1, 1, size=(first_ffn_layer["neurons"]))
-
-    return child_cnn
-
-
 
 
 def nextGeneration(population):
@@ -866,13 +783,11 @@ def nextGeneration(population):
 
     # Fill the rest of the population with mutated individuals
     num_to_mutate = POPULATION_SIZE - len(output_population)
-    
-    for _ in range(num_to_mutate):
-        parents = random.choices(population, weights=fit_list, k=2)  # Select 2 parents
+    parents = random.choices(population, weights=fit_list, k=num_to_mutate)  # Select all parents in one step
 
-        child = single_point_crossover(parents[0], parents[1])
-        child = child.copy().mutate()       # Mutate the child
-        output_population.append(child)     # Add the mutant to the population
+    for parent in parents:
+        mutant = parent.copy().mutate()  # Mutate the parent
+        output_population.append(mutant)  # Add the mutant to the population
 
     # Ensure population size consistency
     assert len(output_population) == POPULATION_SIZE, "Population size mismatch!"
@@ -944,6 +859,7 @@ def play_game_with_ai(ai_model):
 
 
 
+import time
 
 if __name__ == '__main__':
     print("Creating Population")
