@@ -9,7 +9,6 @@ import heapq
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 POPULATION_SIZE = 50
@@ -198,11 +197,11 @@ def AI_duel(cnn1, cnn2):
         # Update both boards with the move
         last_row = None
         if current_value == 1:
-            last_row, last_col = drop_piece(yellow_board, predicted_col, current_value)
+            last_row, _ = drop_piece(yellow_board, predicted_col, current_value)
             drop_piece(red_board, predicted_col, -current_value)
             
         else:
-            last_row, last_col = drop_piece(red_board, predicted_col, current_value)
+            last_row, _ = drop_piece(red_board, predicted_col, current_value)
             drop_piece(yellow_board, predicted_col, -current_value)
 
         # Check for a winner
@@ -332,12 +331,6 @@ def select_best_available_column(output_scores, board):
 
 
 
-
-
-# if __name__ == "__main__":
-#     print("Welcome to Connect Four!")
-#     play_game()
-
     
 
 
@@ -438,9 +431,6 @@ class GenomeModel(nn.Module):
         # Flatten
         x = torch.flatten(x, start_dim=1)
 
-        # Remove incorrect reshaping
-        # x = x.view(1, 1, 64, 1)  # Remove this line
-
         # FFN forward
         for layer in self.ffn_layers:
             x = layer(x)  # linear
@@ -470,7 +460,6 @@ class CNN:
         if genome:
             self.genome = genome
         else:
-
             self.genome = {"cnn_layers": [], "ffn_layers": []}
 
             # Define CNN layers
@@ -858,7 +847,6 @@ def tournament_selection(winners, wins, tournament_size=3):
 
 def nextGeneration(population, generation):
 
-    # --- Shuffle population ---
     random.shuffle(population)
 
     # HEAD-TO-HEAD
