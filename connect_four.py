@@ -325,7 +325,7 @@ def select_best_available_column(output_scores, board):
     """
     sorted_columns = torch.argsort(output_scores, descending=True)
     for col in sorted_columns:
-        col = col.item()
+        col = col.item() + 1
         if is_valid_move(board, col):
             return col
     return -1  # This should not happen unless all columns are full
@@ -582,7 +582,7 @@ class CNN:
         board_2d = input_tensor.squeeze(0).squeeze(0)  # [8, 9]
 
         predicted_column = select_best_available_column(output[0], board_2d)
-        return predicted_column + 1
+        return predicted_column
 
 
 
